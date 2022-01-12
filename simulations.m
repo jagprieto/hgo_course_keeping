@@ -1,274 +1,602 @@
 clc;
 clear('all');
-rng('default');
+% rng('default');
+% rng(1);
 warning('off','all');
+format long;
 
-%%% Practical proportional integral sliding mode control for underactuated %%%
-%%% surface ships in the fields of marine practice %%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SIMULATION CONFIGURATION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 PARAMETERS = {};
-PARAMETERS.CREATE_PDF = true;
-PARAMETERS.SAMPLING_TIME = 1e-2;
-PARAMETERS.TOTAL_TIME = 5;
-PARAMETERS.MANEUVERABILITY_GAINS = [pi/8,pi/14,pi/20];
-PARAMETERS.R_MAX = 0.3;
-PARAMETERS.YAW_REF = 1.0;
-PARAMETERS.BACKSTEPPING_GAIN = 2.0;
-PARAMETERS.RUDDER_MAX = 0.91;
-PARAMETERS.DOT_D_MAX = 2.0;
-PARAMETERS.K = 0.336;
-PARAMETERS.T = 0.24;
-PARAMETERS.a1 = 0.35;
-PARAMETERS.a2 = 0.3;
+PARAMETERS.CREATE_PDF = false;
+PARAMETERS.SAMPLING_TIME = 1e-1;
+PARAMETERS.TOTAL_TIME = 1200;
+PARAMETERS.NORRBIN_A1 = 13.17;
+PARAMETERS.NORRBIN_A2 = 16323.46;
+PARAMETERS.K = 0.21;
+PARAMETERS.T = 107.76;
 PARAMETERS.PLOT_FONT_SIZE = 12.0;
-PARAMETERS.SIMULATION_TYPE = 2; % 1->Straight line; 2->Sinusoidal path
-PARAMETERS.FULL_STATE_FEEDBACK = true; 
+PARAMETERS.LEGEND_FONT_SIZE = 8.0;
+PARAMETERS.SIMULATION_TYPE = 1; % 1->Straight line path; 2->Sinusoidal path
+PARAMETERS.DISTURBANCE_TYPE = 0; % 0->No disturbance; 1->Train of sinusoidal multiple frequencies disturbance 
+if PARAMETERS.DISTURBANCE_TYPE == 0
+    PARAMETERS.DISTURBANCE_AMPLITUDE = 0.0;
+    PARAMETERS.DISTURBANCE_FREQUENCY = 0.0;
+elseif PARAMETERS.DISTURBANCE_TYPE == 1
+    PARAMETERS.DISTURBANCE_AMPLITUDE = 0.25e-3;
+    PARAMETERS.DISTURBANCE_FREQUENCY = 1.12*pi/50;
+end    
+PARAMETERS.REFERENCE_AMPLITUDE = 50*pi/180.0;
+PARAMETERS.REFERENCE_FREQUENCY = 2*pi/600;
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SIMULATION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Simulate
-if (PARAMETERS.FULL_STATE_FEEDBACK)
-    run_full_states_simulation(PARAMETERS);
-else
-    run_partial_states_simulation(PARAMETERS);
-end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% CONTROL PARAMETERS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+PARAMETERS.SETTLING_TIME = 150;
+PARAMETERS.NU = 1.0e-4;
+PARAMETERS.OMEGA_C = 1;
+PARAMETERS.CONTROL_ALFA_INITIAL = -1.25*log(PARAMETERS.NU/PARAMETERS.REFERENCE_AMPLITUDE)/PARAMETERS.SETTLING_TIME;
+PARAMETERS.CONTROL_ALFA_MIN = 1*PARAMETERS.CONTROL_ALFA_INITIAL;
+PARAMETERS.CONTROL_ALFA_MAX = 5*PARAMETERS.CONTROL_ALFA_INITIAL + 5*PARAMETERS.DISTURBANCE_FREQUENCY;
+PARAMETERS.CONTROL_YAW_RATE_MAX = 0.70*pi/180;
+PARAMETERS.CONTROL_LAMBDA_MIN = 1.0*PARAMETERS.CONTROL_YAW_RATE_MAX/PARAMETERS.REFERENCE_AMPLITUDE;
+PARAMETERS.CONTROL_LAMBDA_MAX = 2.0*PARAMETERS.CONTROL_LAMBDA_MIN;
+PARAMETERS.CONTROL_POWER_GAIN_MIN = 0.8;%1.7443;%1.76952;
+PARAMETERS.CONTROL_POWER_GAIN_MAX = 1.685;%3*PARAMETERS.CONTROL_POWER_GAIN_MIN;
+PARAMETERS.SIMULATION_COUNTER = 0;
+PARAMETERS.SIMULATION_INITIAL_POSITIONS = 1; 
+PARAMETERS
 
-function run_partial_states_simulation(PARAMETERS)
+
+for simulation_counter = 1:PARAMETERS.SIMULATION_INITIAL_POSITIONS
+%     simulation_counter
+    % Run simularion
     if PARAMETERS.SIMULATION_TYPE  == 1
-        PARAMETERS.initial_state = [0.00, 0.0]; % yaw, r
-    else
-        PARAMETERS.initial_state = [0.25, 0.1]; % yaw, r
-    end
-    PARAMETERS.OBSERBABILITY_TYPE = 1; % 1->yaw and r
-    PARAMETERS.MANEUVERABILITY_GAIN = PARAMETERS.MANEUVERABILITY_GAINS(2);
-    simulation_data_full = run_simulation(PARAMETERS);
-    PARAMETERS.OBSERBABILITY_TYPE = 2; % 2-> only yaw
-    simulation_data_partial = run_simulation(PARAMETERS);
-    plot_simulation(simulation_data_full, 'r', true, PARAMETERS);
-    plot_simulation(simulation_data_partial, 'b', false, PARAMETERS);
-    figure(1);
-    subplot(3,1,3);
-    legend('Full state feedback','Partial state feddback', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-    if PARAMETERS.CREATE_PDF
-        figure(1);
-        if PARAMETERS.SIMULATION_TYPE  == 1
-            export_fig('../MANUSCRIPT/GRAPHICS/partial_states_straight_line.pdf', '-transparent');
+        PARAMETERS.initial_state = [0.0, 0.0]; % yaw, r
+    else    
+        if PARAMETERS.SIMULATION_INITIAL_POSITIONS == 1
+            PARAMETERS.initial_state = [10.0*pi/180.0, 0]; % yaw, r   
         else
-            export_fig('../MANUSCRIPT/GRAPHICS/partial_states_curve.pdf', '-transparent');
+            yaw = 50*pi*(rand(1)-0.5)/180.0
+            dot_yaw = 5*pi*(rand(1)-0.5)/180.0
+            PARAMETERS.initial_state = [yaw, dot_yaw]; % yaw, r   
         end
     end
+    
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SIMULATION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+    SIMULATION_DATA = run_simulation(PARAMETERS);
+    plot_simulation(SIMULATION_DATA, PARAMETERS);
+    PARAMETERS.SIMULATION_COUNTER =+1;
 end
 
-function run_full_states_simulation(PARAMETERS)
-    if PARAMETERS.SIMULATION_TYPE  == 1
-        PARAMETERS.initial_state = [0.05, 0.0]; % yaw, r
-    else
-        PARAMETERS.initial_state = [0.25, 0.1]; % yaw, r
-    end
-    PARAMETERS.OBSERBABILITY_TYPE = 1; % 1->yaw and r; 2-> Only yaw
-    PARAMETERS.MANEUVERABILITY_GAIN = PARAMETERS.MANEUVERABILITY_GAINS(1);
-    simulation_data_1 = run_simulation(PARAMETERS);
-    PARAMETERS.MANEUVERABILITY_GAIN = PARAMETERS.MANEUVERABILITY_GAINS(2);
-    simulation_data_2 = run_simulation(PARAMETERS);
-    PARAMETERS.MANEUVERABILITY_GAIN = PARAMETERS.MANEUVERABILITY_GAINS(3);
-    simulation_data_3 = run_simulation(PARAMETERS);
-    plot_simulation(simulation_data_1, 'r', true, PARAMETERS);
-    plot_simulation(simulation_data_2, 'b', false, PARAMETERS);
-    plot_simulation(simulation_data_3, 'k', false, PARAMETERS);
-    figure(1);
-    subplot(3,1,3);
-    legend('$\mu={{\pi}\over{8}}$','$\mu={{\pi}\over{14}}$', '$\mu={{\pi}\over{20}}$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-    if PARAMETERS.CREATE_PDF
-        figure(1);
-        if PARAMETERS.SIMULATION_TYPE  == 1
-            export_fig('../MANUSCRIPT/GRAPHICS/full_states_straight_line.pdf', '-transparent');
-        else
-            export_fig('../MANUSCRIPT/GRAPHICS/full_states_curve.pdf', '-transparent');
-        end
-        if PARAMETERS.SIMULATION_TYPE  == 1
-            figure(2);
-            export_fig('../MANUSCRIPT/GRAPHICS/full_states_disturbance_estimation.pdf', '-transparent');
-        end
-    end
-end
-        
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Run simulation 
-function simulation_data = run_simulation(PARAMETERS)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Run simulation
+function SIMULATION_DATA = run_simulation(PARAMETERS)
     % Simulation time
     simulation_time = 0:PARAMETERS.SAMPLING_TIME:PARAMETERS.TOTAL_TIME-PARAMETERS.SAMPLING_TIME;
-    simulation_steps = size(simulation_time, 2);
-    simulation_data = zeros(simulation_steps, 20);
+    simulation_steps = size(simulation_time, 2) + 1;
+    
+    % Prepare simulation data
+    SIMULATION_DATA = {};
+    SIMULATION_DATA.data = zeros(simulation_steps, 5); 
+        
+    % Nonlinear Improved Concise Backstepping Control
+    SIMULATION_DATA.NICB = {};
+    SIMULATION_DATA.NICB.data = zeros(simulation_steps, 10); 
+    SIMULATION_DATA.NICB.yaw = PARAMETERS.initial_state(1);
+    SIMULATION_DATA.NICB.yaw_rate = PARAMETERS.initial_state(2);
+    SIMULATION_DATA.NICB.int_nicb_error = 0.0;
+    SIMULATION_DATA.NICB.MAE = 0.0;
+    SIMULATION_DATA.NICB.MIA = 0.0;
+    SIMULATION_DATA.NICB.MTV = 0.0;
+    SIMULATION_DATA.NICB.control = 0.0;PARAMETERS.SIMULATION_COUNTER 
+        
+    % Synergetic Control
+    SIMULATION_DATA.SYN = {};
+    SIMULATION_DATA.SYN.data = zeros(simulation_steps, 10); 
+    SIMULATION_DATA.SYN.yaw = PARAMETERS.initial_state(1);
+    SIMULATION_DATA.SYN.yaw_rate = PARAMETERS.initial_state(2);
+    SIMULATION_DATA.SYN.int_syn_yaw_error = 0.0;
+    SIMULATION_DATA.SYN.MAE = 0.0;
+    SIMULATION_DATA.SYN.MIA = 0.0;
+    SIMULATION_DATA.SYN.MTV = 0.0;
+    SIMULATION_DATA.SYN.control = 0.0;
+    
+    % AISM
+    SIMULATION_DATA.AISM = {};
+    SIMULATION_DATA.AISM.data = zeros(simulation_steps, 12); 
+    SIMULATION_DATA.AISM.yaw = PARAMETERS.initial_state(1);
+    SIMULATION_DATA.AISM.yaw_rate = PARAMETERS.initial_state(2);
+    SIMULATION_DATA.AISM.int_aism_s = 0.0;
+    SIMULATION_DATA.AISM.int_dot_aism_alfa = PARAMETERS.CONTROL_ALFA_INITIAL;
+    SIMULATION_DATA.AISM.MAE = 0.0;
+    SIMULATION_DATA.AISM.MIA = 0.0;
+    SIMULATION_DATA.AISM.MTV = 0.0;
+    SIMULATION_DATA.AISM.control = 0.0;    
+    
+    % Run simulation
     simulation_time = 0.0;
-    
-    % Inital states
-    yaw = PARAMETERS.initial_state(1);
-    r = PARAMETERS.initial_state(2);
-    w_z_r = 0;
-    if PARAMETERS.OBSERBABILITY_TYPE == 1 % yaw and r
-        est_r = r;
-    else
-        est_r = 0;
-    end
-    beta_r = PARAMETERS.DOT_D_MAX;
-    est_disturbance_r = 0;
-    
     for simulation_step = 1:simulation_steps        
-        %%%%%%%%%%%%%%%% Disturbance %%%%%%%%%%%%%%%%%% 
-        disturbance = 0.3*cos(simulation_time);
-        
-        %%%%%%%%%%%%%%%% Reference %%%%%%%%%%%%%%%%%%%%  
+
+        %------------- Disturbance -------------%  
+        if PARAMETERS.DISTURBANCE_TYPE == 0
+             disturbance = PARAMETERS.DISTURBANCE_AMPLITUDE;
+        elseif PARAMETERS.DISTURBANCE_TYPE == 1
+            disturbance = PARAMETERS.DISTURBANCE_AMPLITUDE*cos(PARAMETERS.DISTURBANCE_FREQUENCY*simulation_time);
+            disturbance = disturbance + 0.83*PARAMETERS.DISTURBANCE_AMPLITUDE*sin(3.29*PARAMETERS.DISTURBANCE_FREQUENCY*simulation_time - 0.14);
+            disturbance = disturbance + 1.23*PARAMETERS.DISTURBANCE_AMPLITUDE*cos(8.12*PARAMETERS.DISTURBANCE_FREQUENCY*simulation_time + 0.26);          
+            disturbance = disturbance + 0.65*PARAMETERS.DISTURBANCE_AMPLITUDE*sin(1.37*PARAMETERS.DISTURBANCE_FREQUENCY*simulation_time + 0.36)*exp(cos(2.21*PARAMETERS.DISTURBANCE_FREQUENCY*simulation_time + 0.13));            
+        end 
+    
+        %------------- Reference -------------% 
         if PARAMETERS.SIMULATION_TYPE  == 1
-            yaw_ref = PARAMETERS.YAW_REF;
-            r_ref = 0;
-            dot_r_ref = 0;
-        else
-            yaw_ref = 0.5*sin(0.2*simulation_time);
-            r_ref = 0.2*0.5*cos(0.2*simulation_time);
-            dot_r_ref = -0.2*0.2*0.5*sin(0.2*simulation_time);
-        end
-         
-        %%%%%%%%%%%%%%%% Ship functions %%%%%%%%%%%%%%%%%%% 
-        h_r = PARAMETERS.a1*r+PARAMETERS.a2*r^3; 
-        g_r = (PARAMETERS.K/PARAMETERS.T);
-        f_r = -g_r*h_r ;
-        
-        if PARAMETERS.OBSERBABILITY_TYPE == 2
-            hat_h_r = PARAMETERS.a1*est_r+PARAMETERS.a2*est_r^3; 
-            hat_f_r = -g_r*hat_h_r ;
+            yaw_ref = PARAMETERS.REFERENCE_AMPLITUDE;
+            yaw_rate_ref = 0.0;
+            dot_yaw_rate_ref = 0.0;
+        else            
+            yaw_ref = PARAMETERS.REFERENCE_AMPLITUDE*sin(PARAMETERS.REFERENCE_FREQUENCY*simulation_time);
+            yaw_rate_ref = PARAMETERS.REFERENCE_AMPLITUDE*PARAMETERS.REFERENCE_FREQUENCY*cos(PARAMETERS.REFERENCE_FREQUENCY*simulation_time);
+            dot_yaw_rate_ref = -PARAMETERS.REFERENCE_AMPLITUDE*PARAMETERS.REFERENCE_FREQUENCY*PARAMETERS.REFERENCE_FREQUENCY*sin(PARAMETERS.REFERENCE_FREQUENCY*simulation_time);            
         end
         
-        %%%%%%%%%%%%%%%% Controller %%%%%%%%%%%%%%%%%%
-        U_yaw = PARAMETERS.R_MAX
-        PARAMETERS.SETTLING_TIME = 1 / U_yaw;
-        alfa_yaw = U_yaw/PARAMETERS.MANEUVERABILITY_GAIN
-        e_yaw = yaw - yaw_ref;
-        dot_e_yaw = r - r_ref;
-        r_c = r_ref - saturation(alfa_yaw*e_yaw,U_yaw);
-        dot_r_c = dot_r_ref;
-        if abs(alfa_yaw*e_yaw) < U_yaw
-            dot_r_c = dot_r_c - alfa_yaw*dot_e_yaw;
+        %------------- Save global data -------------% 
+        SIMULATION_DATA.data(simulation_step, 1) = simulation_time;
+        SIMULATION_DATA.data(simulation_step, 2) = yaw_ref;
+        SIMULATION_DATA.data(simulation_step, 3) = yaw_rate_ref;
+        SIMULATION_DATA.data(simulation_step, 4) = dot_yaw_rate_ref;
+        SIMULATION_DATA.data(simulation_step, 5) = disturbance;
+        
+        if PARAMETERS.SIMULATION_INITIAL_POSITIONS  == 1
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            %%%% Nonlinear Improved Concise Backstepping Control of Course
+            %%%% Keeping for Ships 
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            %------------- Control -------------% 
+            nicb_k1 = 0.0017;
+            nicb_w = 0.6;
+            nicb_error = SIMULATION_DATA.NICB.yaw - yaw_ref;
+            dot_nicb_error = SIMULATION_DATA.NICB.yaw_rate - yaw_rate_ref;
+            [nicb_f, nicb_b] = ship_dynamics_f_b(SIMULATION_DATA.NICB.yaw_rate, PARAMETERS);
+            nicb_control_prev = SIMULATION_DATA.NICB.control;
+            SIMULATION_DATA.NICB.control = (1.0/nicb_b)*(nicb_f - nicb_k1*atan(nicb_w*nicb_error));      
+             
+            %------------- Save data -------------% 
+            SIMULATION_DATA.NICB.data(simulation_step, 1) = SIMULATION_DATA.NICB.yaw;
+            SIMULATION_DATA.NICB.data(simulation_step, 2) = SIMULATION_DATA.NICB.yaw_rate;
+            SIMULATION_DATA.NICB.data(simulation_step, 3) = SIMULATION_DATA.NICB.control;
+            SIMULATION_DATA.NICB.data(simulation_step, 4) = SIMULATION_DATA.NICB.MAE;
+            SIMULATION_DATA.NICB.data(simulation_step, 5) = SIMULATION_DATA.NICB.MIA;
+            SIMULATION_DATA.NICB.data(simulation_step, 6) = SIMULATION_DATA.NICB.MTV;
+            SIMULATION_DATA.NICB.data(simulation_step, 7) = nicb_error;
+            SIMULATION_DATA.NICB.data(simulation_step, 8) = dot_nicb_error;
+            
+            %------------- Ship dynamics -------------% 
+            [SIMULATION_DATA.NICB.yaw, SIMULATION_DATA.NICB.yaw_rate] = ship_dynamics(SIMULATION_DATA.NICB.yaw, SIMULATION_DATA.NICB.yaw_rate, SIMULATION_DATA.NICB.control, disturbance, PARAMETERS);
+           
+            %------------- Update states -------------% 
+            SIMULATION_DATA.NICB.int_e1 = SIMULATION_DATA.NICB.int_nicb_error + nicb_error*PARAMETERS.SAMPLING_TIME; 
+            SIMULATION_DATA.NICB.MAE = (SIMULATION_DATA.NICB.MAE + abs(nicb_error)*PARAMETERS.SAMPLING_TIME);        
+            SIMULATION_DATA.NICB.MIA = (SIMULATION_DATA.NICB.MIA + abs(SIMULATION_DATA.NICB.control)*PARAMETERS.SAMPLING_TIME);
+            if simulation_step > 1
+                 SIMULATION_DATA.NICB.MTV = (SIMULATION_DATA.NICB.MTV + abs(SIMULATION_DATA.NICB.control - nicb_control_prev)*PARAMETERS.SAMPLING_TIME);  
+            end        
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                    
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            %%%% Robust integral backstepping and terminal synergetic control of course 
+            %%%% keeping for ships
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            %------------- Control -------------% 
+            syn_a1 = 0.09;
+            syn_a2 = 1.8912;
+            syn_T1 = 28.0; 
+            syn_yaw_error = SIMULATION_DATA.SYN.yaw - yaw_ref;                
+            dot_syn_yaw_error = SIMULATION_DATA.SYN.yaw_rate - yaw_rate_ref;
+            [syn_f, syn_b] = ship_dynamics_f_b(SIMULATION_DATA.SYN.yaw_rate, PARAMETERS);
+            syn_s = syn_a1*syn_yaw_error + syn_a2*dot_syn_yaw_error;
+            syn_control_prev = SIMULATION_DATA.SYN.control;
+            SIMULATION_DATA.SYN.control = (-1.0/(syn_b*syn_a2))*(syn_a1*SIMULATION_DATA.SYN.yaw_rate + syn_a2*syn_f + (syn_s/syn_T1));    
+            
+            %------------- Save data -------------% 
+            SIMULATION_DATA.SYN.data(simulation_step, 1) = SIMULATION_DATA.SYN.yaw;
+            SIMULATION_DATA.SYN.data(simulation_step, 2) = SIMULATION_DATA.SYN.yaw_rate;
+            SIMULATION_DATA.SYN.data(simulation_step, 3) = SIMULATION_DATA.SYN.control;
+            SIMULATION_DATA.SYN.data(simulation_step, 4) = SIMULATION_DATA.SYN.MAE;
+            SIMULATION_DATA.SYN.data(simulation_step, 5) = SIMULATION_DATA.SYN.MIA;
+            SIMULATION_DATA.SYN.data(simulation_step, 6) = SIMULATION_DATA.SYN.MTV;
+            SIMULATION_DATA.SYN.data(simulation_step, 7) = syn_yaw_error;
+            SIMULATION_DATA.SYN.data(simulation_step, 8) = dot_syn_yaw_error;
+            
+            %------------- Ship dynamics -------------% 
+            [SIMULATION_DATA.SYN.yaw, SIMULATION_DATA.SYN.yaw_rate] = ship_dynamics(SIMULATION_DATA.SYN.yaw, SIMULATION_DATA.SYN.yaw_rate, SIMULATION_DATA.SYN.control, disturbance, PARAMETERS);
+           
+            %------------- Update states -------------% 
+            SIMULATION_DATA.SYN.int_e1 = SIMULATION_DATA.SYN.int_syn_yaw_error + syn_yaw_error*PARAMETERS.SAMPLING_TIME;
+            SIMULATION_DATA.SYN.MAE = (SIMULATION_DATA.SYN.MAE + abs(syn_yaw_error)*PARAMETERS.SAMPLING_TIME);        
+            SIMULATION_DATA.SYN.MIA = (SIMULATION_DATA.SYN.MIA + abs(SIMULATION_DATA.SYN.control)*PARAMETERS.SAMPLING_TIME);
+            if simulation_step > 1
+                 SIMULATION_DATA.SYN.MTV = (SIMULATION_DATA.SYN.MTV + abs(SIMULATION_DATA.SYN.control - syn_control_prev)*PARAMETERS.SAMPLING_TIME);  
+            end  
         end
-        U_r = PARAMETERS.BACKSTEPPING_GAIN*U_yaw     
-        %alfa_r = (U_r*PARAMETERS.SETTLING_TIME)/PARAMETERS.MANEUVERABILITY_GAIN;
-        nu_r = PARAMETERS.MANEUVERABILITY_GAIN/PARAMETERS.BACKSTEPPING_GAIN
-        alfa_r = U_r/nu_r
+
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        %%%% Adaptive Integral Sliding Mode Control
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        aism_yaw_error = SIMULATION_DATA.AISM.yaw - yaw_ref;               
+        dot_aism_yaw_error = SIMULATION_DATA.AISM.yaw_rate - yaw_rate_ref;       
+        [aism_f, aism_b] = ship_dynamics_f_b(SIMULATION_DATA.AISM.yaw_rate, PARAMETERS);
+        aism_control_prev = SIMULATION_DATA.AISM.control;        
+        aism_lambda = PARAMETERS.CONTROL_LAMBDA_MAX - ((PARAMETERS.CONTROL_LAMBDA_MAX-PARAMETERS.CONTROL_LAMBDA_MIN)/PARAMETERS.REFERENCE_AMPLITUDE)*abs(aism_yaw_error);
+        dot_aism_lambda = - ((PARAMETERS.CONTROL_LAMBDA_MAX-PARAMETERS.CONTROL_LAMBDA_MIN)/PARAMETERS.REFERENCE_AMPLITUDE)*sign(aism_yaw_error)*dot_aism_yaw_error;        
+        aism_s = dot_aism_yaw_error + aism_lambda*aism_yaw_error; 
+        aism_alfa = SIMULATION_DATA.AISM.int_dot_aism_alfa;
+
+        aism_z = aism_s + (aism_alfa/2.0)*SIMULATION_DATA.AISM.int_aism_s;
+        aism_power_gain = ((PARAMETERS.CONTROL_POWER_GAIN_MAX - PARAMETERS.CONTROL_POWER_GAIN_MIN)/PARAMETERS.REFERENCE_AMPLITUDE)*abs(aism_yaw_error) + PARAMETERS.CONTROL_POWER_GAIN_MIN; 
+        aism_kappa = (1/(PARAMETERS.NU^(1/(aism_power_gain+1))))*aism_alfa/2.0;
+        aism_gamma = (aism_alfa^2)/4.0;      
+        SIMULATION_DATA.AISM.control = (1.0/aism_b)*(-aism_f + dot_yaw_rate_ref - aism_lambda*dot_aism_yaw_error - dot_aism_lambda*aism_yaw_error - aism_alfa*aism_s - aism_gamma*SIMULATION_DATA.AISM.int_aism_s);
+                
+        %------------- Update control states -------------% 
+        SIMULATION_DATA.AISM.int_aism_s = SIMULATION_DATA.AISM.int_aism_s + aism_s*PARAMETERS.SAMPLING_TIME;
        
-        if PARAMETERS.OBSERBABILITY_TYPE == 1 % yaw and r
-            e_r =  r - r_c;
-            u = (1/g_r)*(-f_r - est_disturbance_r  + dot_r_c - saturation(alfa_r*e_r,U_r));
-        else
-            e_r =  est_r - r_c;
-            u = (1/g_r)*(-hat_f_r - est_disturbance_r  + dot_r_c - saturation(alfa_r*e_r,U_r));
+        dot_aism_alfa = aism_kappa*sign(aism_z)*(abs(aism_z)^aism_power_gain)*sign(aism_s);
+        if abs(aism_z) < PARAMETERS.NU
+            dot_aism_alfa = 0;
         end
-        u = saturation(u,PARAMETERS.RUDDER_MAX); 
+        aism_alfa = aism_alfa + dot_aism_alfa*PARAMETERS.SAMPLING_TIME;
+        if  (aism_alfa < PARAMETERS.CONTROL_ALFA_MIN)
+            aism_alfa = PARAMETERS.CONTROL_ALFA_MIN;
+        elseif (aism_alfa > PARAMETERS.CONTROL_ALFA_MAX)
+            aism_alfa = PARAMETERS.CONTROL_ALFA_MAX;
+        end
+        SIMULATION_DATA.AISM.int_dot_aism_alfa = aism_alfa;
+
+        %------------- Save data -------------% 
+        SIMULATION_DATA.AISM.data(simulation_step, 1) = SIMULATION_DATA.AISM.yaw;
+        SIMULATION_DATA.AISM.data(simulation_step, 2) = SIMULATION_DATA.AISM.yaw_rate;
+        SIMULATION_DATA.AISM.data(simulation_step, 3) = SIMULATION_DATA.AISM.control;
+        SIMULATION_DATA.AISM.data(simulation_step, 4) = SIMULATION_DATA.AISM.MAE;
+        SIMULATION_DATA.AISM.data(simulation_step, 5) = SIMULATION_DATA.AISM.MIA;
+        SIMULATION_DATA.AISM.data(simulation_step, 6) = SIMULATION_DATA.AISM.MTV;
+        SIMULATION_DATA.AISM.data(simulation_step, 7) = aism_yaw_error;
+        SIMULATION_DATA.AISM.data(simulation_step, 8) = dot_aism_yaw_error;
+        SIMULATION_DATA.AISM.data(simulation_step, 9) = aism_alfa;
+        SIMULATION_DATA.AISM.data(simulation_step, 10) = aism_s;
+        SIMULATION_DATA.AISM.data(simulation_step, 11) = aism_lambda;
+        SIMULATION_DATA.AISM.data(simulation_step, 12) = aism_power_gain;
+        SIMULATION_DATA.AISM.data(simulation_step, 13) = aism_kappa;
+        
+        %------------- Ship dynamics -------------% 
+        [SIMULATION_DATA.AISM.yaw, SIMULATION_DATA.AISM.yaw_rate] = ship_dynamics(SIMULATION_DATA.AISM.yaw, SIMULATION_DATA.AISM.yaw_rate, SIMULATION_DATA.AISM.control, disturbance, PARAMETERS);
        
-        %%%%%%%%%%%%%%%% Disturbance estimation %%%%%%%%%%%%%%%%%
-        if PARAMETERS.OBSERBABILITY_TYPE == 1 % yaw and r
-            [z_r_new, est_disturbance_r, est_r_new, w_z_r_new] = differenciation(r, f_r + g_r*u, est_r, w_z_r, PARAMETERS.SAMPLING_TIME, beta_r);
-        else
-            [z_r_new, est_disturbance_r, est_r_new, w_z_r_new] = differenciation(r, hat_f_r + g_r*u, est_r, w_z_r, PARAMETERS.SAMPLING_TIME, beta_r);
-        end
-        %%%%%%%%%%%%%%%%%%%%%% Ship dynamics %%%%%%%%%%%%%%%%%%%%%        
-        dot_yaw = r;
-        dot_r = f_r + g_r*u + disturbance;
-        
-        %%%%%%%%%%%%%%%%%%%%%% Save data %%%%%%%%%%%%%%%%%%%%%
-        simulation_data(simulation_step, 1) = simulation_time;
-        simulation_data(simulation_step, 2) = yaw_ref;
-        simulation_data(simulation_step, 3) = r_ref;
-        simulation_data(simulation_step, 4) = yaw;
-        simulation_data(simulation_step, 5) = r; 
-        simulation_data(simulation_step, 6) = u;
-        if PARAMETERS.OBSERBABILITY_TYPE == 1
-            simulation_data(simulation_step, 7) = disturbance;
-        else
-            simulation_data(simulation_step, 7) = f_r + disturbance;
-        end
-        simulation_data(simulation_step, 8) = est_disturbance_r;
-        simulation_data(simulation_step, 9) = beta_r;
-        simulation_data(simulation_step, 10) = est_r;         
-        
-        %%%%%%%%%%%%%%%%%%%%%% Update data %%%%%%%%%%%%%%%%%%%%% 
-        yaw = yaw + dot_yaw*PARAMETERS.SAMPLING_TIME;
-        r = r + dot_r*PARAMETERS.SAMPLING_TIME;
-        est_r = est_r_new;
-        w_z_r = w_z_r_new;
+        %------------- Update arror indices -------------% 
+        SIMULATION_DATA.AISM.MAE = (SIMULATION_DATA.AISM.MAE + abs(aism_yaw_error)*PARAMETERS.SAMPLING_TIME);        
+        SIMULATION_DATA.AISM.MIA = (SIMULATION_DATA.AISM.MIA + abs(SIMULATION_DATA.AISM.control)*PARAMETERS.SAMPLING_TIME);
+        if simulation_step > 1
+            SIMULATION_DATA.AISM.MTV = (SIMULATION_DATA.AISM.MTV + abs(SIMULATION_DATA.AISM.control - aism_control_prev)*PARAMETERS.SAMPLING_TIME);  
+        end  
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                
+        % Update time
         simulation_time = simulation_time + PARAMETERS.SAMPLING_TIME;
     end
-    PARAMETERS
 end
 
-% Differenciation function dx = f + d -> estimation of d
-function [z, est_d, est_x_new, w_z_new] = differenciation(x, f, est_x, w_z, tau, beta)
-    lambda = 1 / tau;
-    nu = (((tau/pi)^2)*(2*beta))^(1/3);
-    gamma = beta / nu;
-    z = x - est_x;
-    est_d = lambda*z + w_z;
-    dot_est_x = f + est_d;
-    dot_w_z = ((lambda^2)/4.0)*z + saturation(gamma*z, beta);
-    est_x_new = est_x + dot_est_x*tau;
-    w_z_new = w_z + dot_w_z*tau;
+% Ship dynamics
+function [yaw_new, yaw_rate_new] = ship_dynamics(yaw, yaw_rate, control, disturbance, PARAMETERS)
+    yaw_new = yaw + yaw_rate*PARAMETERS.SAMPLING_TIME;
+    [f, b] = ship_dynamics_f_b(yaw_rate, PARAMETERS);
+    yaw_rate_new = yaw_rate + (f+(b*control)+disturbance)*PARAMETERS.SAMPLING_TIME;
+end
+
+function [f, b] = ship_dynamics_f_b(yaw_rate, PARAMETERS)
+    b = PARAMETERS.K / PARAMETERS.T;
+    h = PARAMETERS.NORRBIN_A1*yaw_rate + PARAMETERS.NORRBIN_A2*(yaw_rate*yaw_rate*yaw_rate);    
+    f = -b*h;
 end
 
 % Plot simulation 
-function plot_simulation(simulation_data, color, create, PARAMETERS)
+function plot_simulation(SIMULATION_DATA, PARAMETERS)
+    COUNTER = PARAMETERS.SIMULATION_COUNTER 
+
     fig1 = figure(1);
+    create = false;
+    if PARAMETERS.SIMULATION_COUNTER == 0
+        create = true;
+    end
     if create
         clf(fig1);
     end
     subplot(3,1,1);
-    plot(simulation_data(:,1), simulation_data(:,4) ,'-', 'Color', color, 'LineWidth',1.0);    
     if create
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.data(:,2)*180.0/pi ,'-', 'Color', 'c', 'LineWidth',1.5);
         grid on;
         hold on;
-        plot(simulation_data(:,1), simulation_data(:,2) ,'-', 'Color', [0.5 0.5 0.5], 'LineWidth',1.5);
         ylabel('$\psi_{r}(t)$ vs $\psi$(t)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
         xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-        title('Desired and obtained yaw angle (rad)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('Desired and obtained yaw angle (º)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0.0, PARAMETERS.TOTAL_TIME]);
     end
-    subplot(3,1,2);
-    plot(simulation_data(:,1), simulation_data(:,5),'-', 'Color', color,  'LineWidth',1.0);
-    if create
-        grid on;
-        hold on;
-        plot(simulation_data(:,1), simulation_data(:,3) ,'-', 'Color', [0.5 0.5 0.5], 'LineWidth',1.5); 
-        ylabel('$r_{r}(t)$ vs $r(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-        xlabel('time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-        title('Desired and obtained yaw rate (rad/s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-    end
-    subplot(3,1,3);
-    plot(simulation_data(:,1), simulation_data(:,6),'-', 'Color', color, 'LineWidth',1.0);
-    if create
-        grid on;
-        hold on;
-        ylabel('u(t)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-        xlabel('time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-        title('Control effort', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,1)*180.0/pi ,'-', 'Color', 'k', 'LineWidth',1.0);    
+    if PARAMETERS.SIMULATION_INITIAL_POSITIONS  == 1
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.NICB.data(:,1)*180.0/pi ,'-', 'Color', 'r', 'LineWidth',1.0);    
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.SYN.data(:,1)*180.0/pi ,'-', 'Color', 'b', 'LineWidth',1.0);    
     end
     
+
+    if PARAMETERS.SIMULATION_INITIAL_POSITIONS  == 1
+        if PARAMETERS.SIMULATION_TYPE == 1
+            axes('Position',[.55 .77 .3 .1])
+            box on
+            data_size = size(SIMULATION_DATA.data(:,1),1) - 1;
+            detail_size = floor(100.0/PARAMETERS.SAMPLING_TIME);
+            from_to_detail = data_size-detail_size:data_size;    
+            plot(SIMULATION_DATA.data(from_to_detail,1), SIMULATION_DATA.data(from_to_detail,2)*180.0/pi ,'-', 'Color', 'c', 'LineWidth',1.5);
+            grid on;
+            hold on;
+            plot(SIMULATION_DATA.data(from_to_detail,1), SIMULATION_DATA.AISM.data(from_to_detail,1)*180.0/pi ,'-', 'Color', 'k',  'LineWidth',1.5);
+            if PARAMETERS.SIMULATION_INITIAL_POSITIONS  == 1
+                plot(SIMULATION_DATA.data(from_to_detail,1), SIMULATION_DATA.NICB.data(from_to_detail,1)*180.0/pi ,'-', 'Color', 'r', 'LineWidth',1.0); 
+                plot(SIMULATION_DATA.data(from_to_detail,1), SIMULATION_DATA.SYN.data(from_to_detail,1)*180.0/pi ,'-', 'Color', 'b',  'LineWidth',1.0);            
+            end
+        %     title('Detailed view of yaw error at steady-state');
+            xlim([PARAMETERS.TOTAL_TIME-detail_size*PARAMETERS.SAMPLING_TIME, PARAMETERS.TOTAL_TIME]);
+        end
+    end
+
+    subplot(3,1,2);
     if create
-        fig2 = figure(2);
-        clf(fig2);
-%         subplot(2,1,1);
-        plot(simulation_data(:,1), simulation_data(:,8) ,'-', 'Color', color, 'LineWidth',1.0);   
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.data(:,3)*180.0/pi ,'-', 'Color', 'c', 'LineWidth',1.5); 
         grid on;
         hold on;
-        plot(simulation_data(:,1), simulation_data(:,7) ,'-', 'Color', [0.5 0.5 0.5], 'LineWidth',1.0); 
-        title('Disturbance estimation', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-        ylabel('$d(t)$ vs $\hat{d}(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-        xlabel('time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
-        xlim([0,2]);
+        ylabel('$r_{r}(t)$ vs $r(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('Desired and obtained yaw rate (º/s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0.0, PARAMETERS.TOTAL_TIME]);
     end
-end
-
-% Saturation function
-function y = saturation(x, x_max)
-    if abs(x)> x_max
-        y=x_max*sign(x);
-    else 
-        y=x;
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,2)*180.0/pi ,'-', 'Color', 'k',  'LineWidth',1.0);
+    if PARAMETERS.SIMULATION_INITIAL_POSITIONS  == 1
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.NICB.data(:,2)*180.0/pi ,'-', 'Color', 'r',  'LineWidth',1.0);   
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.SYN.data(:,2)*180.0/pi ,'-', 'Color', 'b',  'LineWidth',1.0);
+    end    
+    
+%     if  PARAMETERS.SIMULATION_TYPE == 1
+%         legend('Reference','Adaptive Sliding Mode (González-Prieto et al.)', 'Concise Backstepping (Zhang et al.)','Synergetic (Muhammad et al.)','Interpreter','latex','FontSize', PARAMETERS.LEGEND_FONT_SIZE); 
+%     end
+    
+    subplot(3,1,3);
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,3)*180.0/pi,'-', 'Color', 'k', 'LineWidth',1.0);    
+    if create
+        grid on;
+        hold on;
+        ylabel('$\delta(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('Rudder angle', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0.0, PARAMETERS.TOTAL_TIME]);
+    end    
+    if PARAMETERS.SIMULATION_INITIAL_POSITIONS  == 1
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.NICB.data(:,3)*180.0/pi,'-', 'Color', 'r', 'LineWidth',1.0);
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.SYN.data(:,3)*180.0/pi,'-', 'Color', 'b', 'LineWidth',1.0);
     end
-end
+    if PARAMETERS.SIMULATION_INITIAL_POSITIONS == 1
+        if PARAMETERS.DISTURBANCE_TYPE == 0
+            axes('Position',[.30 .20 .4 .1])
+            box on
+            detail_size = floor(100.0/PARAMETERS.SAMPLING_TIME);
+            from_to_detail = 1:detail_size; 
+            plot(SIMULATION_DATA.data(from_to_detail,1), SIMULATION_DATA.AISM.data(from_to_detail,3)*180.0/pi,'-', 'Color', 'k', 'LineWidth',1.0);
+            grid on;
+            hold on;
+            if PARAMETERS.SIMULATION_INITIAL_POSITIONS  == 1
+                plot(SIMULATION_DATA.data(from_to_detail,1), SIMULATION_DATA.NICB.data(from_to_detail,3)*180.0/pi,'-', 'Color', 'r', 'LineWidth',1.0);
+                plot(SIMULATION_DATA.data(from_to_detail,1), SIMULATION_DATA.SYN.data(from_to_detail,3)*180.0/pi,'-', 'Color', 'b', 'LineWidth',1.0);
+            end
+            xlim([0, detail_size*PARAMETERS.SAMPLING_TIME]);
+        end
+    end  
+    disp('------ Nonlinear Improved Concise Backstepping Control -------');
+    MAE = SIMULATION_DATA.NICB.MAE/PARAMETERS.TOTAL_TIME
+    MIA = SIMULATION_DATA.NICB.MIA/PARAMETERS.TOTAL_TIME
+    MTV = SIMULATION_DATA.NICB.MTV/PARAMETERS.TOTAL_TIME
+    
+    disp('------ Synergetic Control -------');
+    MAE = SIMULATION_DATA.SYN.MAE/PARAMETERS.TOTAL_TIME
+    MIA = SIMULATION_DATA.SYN.MIA/PARAMETERS.TOTAL_TIME
+    MTV = SIMULATION_DATA.SYN.MTV/PARAMETERS.TOTAL_TIME
+   
+    disp('------ AISM -------');
+    MAE = SIMULATION_DATA.AISM.MAE/PARAMETERS.TOTAL_TIME
+    MIA = SIMULATION_DATA.AISM.MIA/PARAMETERS.TOTAL_TIME
+    MTV = SIMULATION_DATA.AISM.MTV/PARAMETERS.TOTAL_TIME
+   
+    fig2 = figure(2);
+    if create
+        clf(fig2);
+    end
+    subplot(3,1,1);
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,4)/PARAMETERS.TOTAL_TIME,'-', 'Color', 'k', 'LineWidth',1.0);       
+    if create
+        grid on;
+        hold on;
+        ylabel('MAE', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('MAE integral', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0.0, PARAMETERS.TOTAL_TIME]);
+    end
+    if PARAMETERS.SIMULATION_INITIAL_POSITIONS  == 1
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.NICB.data(:,4)/PARAMETERS.TOTAL_TIME ,'-', 'Color', 'r', 'LineWidth',1.0); 
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.SYN.data(:,4)/PARAMETERS.TOTAL_TIME ,'-', 'Color', 'b', 'LineWidth',1.0);    
+    end
+      
+%     legend('Adaptive Sliding Mode (González-Prieto et al.)', 'Concise Backstepping (Zhang et al.)','Synergetic (Muhammad et al.)',...
+%         'Interpreter','latex','FontSize', PARAMETERS.LEGEND_FONT_SIZE,'location','southeast'); 
 
+    
+    subplot(3,1,2);
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,5)/PARAMETERS.TOTAL_TIME ,'-', 'Color', 'k', 'LineWidth',1.0);    
+    
+    if create
+        grid on;
+        hold on;
+        ylabel('MIA', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('MIA integral', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0.0, PARAMETERS.TOTAL_TIME]);
+    end
+    if  PARAMETERS.SIMULATION_TYPE == 1
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.NICB.data(:,5)/PARAMETERS.TOTAL_TIME ,'-', 'Color', 'r', 'LineWidth',1.0);    
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.SYN.data(:,5)/PARAMETERS.TOTAL_TIME ,'-', 'Color', 'b', 'LineWidth',1.0);    
+    end
+    
+    if PARAMETERS.SIMULATION_TYPE == 1
+        axes('Position',[.55 .50 .3 .1])
+        box on
+        data_size = size(SIMULATION_DATA.data(:,1),1) - 1;
+        detail_size = floor(20.0/PARAMETERS.SAMPLING_TIME);  
+        from_to_detail = data_size-detail_size:data_size; 
+        plot(SIMULATION_DATA.data(from_to_detail,1), SIMULATION_DATA.AISM.data(from_to_detail,5)/PARAMETERS.TOTAL_TIME ,'-', 'Color', 'k',  'LineWidth',1.0);
+        grid on;
+        hold on;
+        plot(SIMULATION_DATA.data(from_to_detail,1), SIMULATION_DATA.NICB.data(from_to_detail,5)/PARAMETERS.TOTAL_TIME,'-', 'Color', 'r', 'LineWidth',1.0);
+        plot(SIMULATION_DATA.data(from_to_detail,1), SIMULATION_DATA.SYN.data(from_to_detail,5)/PARAMETERS.TOTAL_TIME ,'-', 'Color', 'b', 'LineWidth',1.0); 
+        xlim([PARAMETERS.TOTAL_TIME-detail_size*PARAMETERS.SAMPLING_TIME, PARAMETERS.TOTAL_TIME]);   
+        MIA = 0.011348763656449;
+        delta_mia = 1e-6;
+        ylim([MIA-delta_mia,MIA+delta_mia]);     
+        %ylim([0.011347,0.011350]);     
+    end
+
+    subplot(3,1,3);
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,6)/PARAMETERS.TOTAL_TIME ,'-', 'Color', 'k', 'LineWidth',1.0);        
+    if create
+        grid on;
+        hold on;
+        ylabel('MTV', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('MTV integral', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0.0, PARAMETERS.TOTAL_TIME]);
+    end
+    if PARAMETERS.SIMULATION_TYPE == 1
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.NICB.data(:,6)/PARAMETERS.TOTAL_TIME ,'-', 'Color', 'r', 'LineWidth',1.0); 
+        plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.SYN.data(:,6)/PARAMETERS.TOTAL_TIME ,'-', 'Color', 'b', 'LineWidth',1.0); 
+    end
+    fig4 = figure(4);
+    if create
+        clf(fig4);
+    end
+    subplot(4,1,1);
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,9) ,'-', 'Color', 'k', 'LineWidth',1.0); 
+    if create
+        grid on;
+        hold on;
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        ylabel('$\alpha(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('Evolution of parameter $\alpha(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0, PARAMETERS.TOTAL_TIME]);
+    end
+
+    subplot(4,1,2);
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,11) ,'-', 'Color', 'k', 'LineWidth',1.0);   
+    if create
+        grid on;
+        hold on;
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        ylabel('$\lambda(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('Evolution of parameter $\lambda(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0, PARAMETERS.TOTAL_TIME]);
+    end
+
+    subplot(4,1,3);
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,12) ,'-', 'Color', 'k', 'LineWidth',1.0);   
+    if create
+        grid on;
+        hold on;
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        ylabel('$\delta(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('Evolution of parameter $\delta(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0, PARAMETERS.TOTAL_TIME]);
+    end
+
+    subplot(4,1,4);
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,13) ,'-', 'Color', 'k', 'LineWidth',1.0);   
+    if create
+        grid on;
+        hold on;
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        ylabel('$\kappa(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('Evolution of parameter $\kappa(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0, PARAMETERS.TOTAL_TIME]);
+    end
+
+    fig5 = figure(5);
+    if create
+        clf(fig5);
+    end
+    subplot(2,1,1);
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.AISM.data(:,10) ,'-', 'Color', 'k', 'LineWidth',1.0);   
+    if create
+        grid on;
+        hold on;
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        ylabel('s(t)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('Adaptive sliding mode surface variable', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0, PARAMETERS.TOTAL_TIME]);
+    end
+
+    subplot(2,1,2);
+    plot(SIMULATION_DATA.data(:,1), SIMULATION_DATA.data(:,5) ,'-', 'Color', 'k', 'LineWidth',1.0);   
+    if create
+        grid on;
+        hold on;
+        xlabel('Time (s)', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        ylabel('$d(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        title('Evolution of disturbance $d(t)$', 'FontSize', PARAMETERS.PLOT_FONT_SIZE,'Interpreter','latex');
+        xlim([0, PARAMETERS.TOTAL_TIME]);
+    end
+
+    if PARAMETERS.CREATE_PDF
+        if PARAMETERS.SIMULATION_TYPE == 1
+            if PARAMETERS.DISTURBANCE_TYPE == 1
+                figure(1);
+                export_fig('../MANUSCRIPT/GRAPHICS/constant_reference_disturbance_states_control.pdf', '-transparent', '-nocrop');
+                figure(2);
+                export_fig('../MANUSCRIPT/GRAPHICS/constant_reference_disturbance_performance.pdf', '-transparent', '-nocrop');
+                figure(4);
+                export_fig('../MANUSCRIPT/GRAPHICS/constant_reference_disturbance_parameters.pdf', '-transparent', '-nocrop');
+                figure(5);
+                export_fig('../MANUSCRIPT/GRAPHICS/constant_reference_disturbance_s_d.pdf', '-transparent', '-nocrop');
+            else                
+                figure(1);
+                export_fig('../MANUSCRIPT/GRAPHICS/constant_reference_states_control.pdf', '-transparent', '-nocrop');
+                figure(2);
+                export_fig('../MANUSCRIPT/GRAPHICS/constant_reference_performance.pdf', '-transparent', '-nocrop');
+                figure(4);
+                export_fig('../MANUSCRIPT/GRAPHICS/constant_reference_parameters.pdf', '-transparent', '-nocrop');
+                figure(5);
+                export_fig('../MANUSCRIPT/GRAPHICS/constant_reference_s_d.pdf', '-transparent', '-nocrop');
+            end
+        else
+            if PARAMETERS.DISTURBANCE_TYPE == 1
+                figure(1);
+                export_fig('../MANUSCRIPT/GRAPHICS/sinusoidal_reference_disturbance_states_control.pdf', '-transparent', '-nocrop');
+                figure(2);
+                export_fig('../MANUSCRIPT/GRAPHICS/sinusoidal_reference_disturbance_performance.pdf', '-transparent', '-nocrop');
+                figure(4);
+                export_fig('../MANUSCRIPT/GRAPHICS/sinusoidal_reference_disturbance_parameters.pdf', '-transparent', '-nocrop');
+                figure(5);
+                export_fig('../MANUSCRIPT/GRAPHICS/sinusoidal_reference_disturbance_s_d.pdf', '-transparent', '-nocrop');
+            else                
+                figure(1);
+                export_fig('../MANUSCRIPT/GRAPHICS/sinusoidal_reference_states_control.pdf', '-transparent', '-nocrop');
+                figure(2);
+                export_fig('../MANUSCRIPT/GRAPHICS/sinusoidal_reference_performance.pdf', '-transparent', '-nocrop');
+                figure(4);
+                export_fig('../MANUSCRIPT/GRAPHICS/sinusoidal_reference_parameters.pdf', '-transparent', '-nocrop');
+                figure(5);
+                export_fig('../MANUSCRIPT/GRAPHICS/sinusoidal_reference_s_d.pdf', '-transparent', '-nocrop');
+            end
+        end
+    end    
+end
